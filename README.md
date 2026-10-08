@@ -67,6 +67,19 @@ by 87% to 221,346.
 **Limitations:** the weights are a reasoned starting point, not yet validated. The next step
 is to backtest them against which companies actually close in later monthly snapshots.
 
+## Change data capture (live updates)
+
+`src/stream_companies.py` reads the Companies House streaming API and saves each company change
+as JSON Lines, recording its timepoint so the next run resumes with no gaps. The events are
+uploaded to the lake, and `databricks/04_cdc_merge` merges them into the silver table:
+
+- **Latest event wins**: each company's newest change is applied with a Delta `MERGE`
+- **Idempotent**: rerunning on the same events changes nothing
+- **Full history**: every event is also kept in `silver.company_changes` for auditing and backtesting
+
+First run (8 October 2026): 129 events covering 91 companies, with 79 existing companies
+updated (including 2 that moved to proposal to strike off) and 12 newly formed companies added.
+
 ## Tech stack
 
 Python · SQL · DuckDB · pandas · Parquet · pytest · PySpark · Delta Lake ·
