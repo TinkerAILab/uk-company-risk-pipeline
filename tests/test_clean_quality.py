@@ -5,6 +5,11 @@ SNAPSHOT_DATE = "2026-10-01"
 RAW_PATH = f"data/raw/bulk/companies_{SNAPSHOT_DATE}.parquet"
 CLEAN_PATH = f"data/clean/companies_clean_{SNAPSHOT_DATE}.parquet"
 
+from pathlib import Path
+
+if not Path(CLEAN_PATH).exists():
+    pytest.skip("Snapshot data not available (it is not stored in Git)", allow_module_level=True)
+
 
 @pytest.fixture(scope="module")
 def con():
