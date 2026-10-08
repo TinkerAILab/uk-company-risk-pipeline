@@ -1,5 +1,7 @@
 # UK Company Risk Pipeline
 
+![Tests](https://github.com/TinkerAILab/uk-company-risk-pipeline/actions/workflows/tests.yml/badge.svg)
+
 A data engineering project that builds a pipeline on UK Companies House data, working towards
 a simple, explainable **payment-risk score**: a way for small businesses to check whether a
 customer is likely to pay on time before giving them credit.
@@ -112,8 +114,8 @@ never in code.
 ## Roadmap
 
 - [x] Move storage to Azure Data Lake and processing to Databricks
-- [ ] Capture live company changes from the Companies House streaming API
-- [ ] Extract key figures from filed accounts
-- [ ] Backtest the risk score against next month's snapshot
-- [ ] Build a dashboard on the gold tables
-- [ ] Automate tests with GitHub Actions
+- [x] Capture live company changes from the Companies House streaming API
+- [x] Extract key figures from filed accounts
+- [x] Backtest the risk score against next month's snapshot
+- [x] Build a dashboard on the gold tables
+- [x] Automate tests with GitHub Actions
