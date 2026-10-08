@@ -8,12 +8,28 @@ The idea comes from my experience in credit control: chasing late payers and rec
 
 ## What the pipeline does
 
-| Stage | Script | What it does |
+| Stage | Where | What it does |
 |---|---|---|
 | Ingest (API) | `src/fetch_companies.py` | Calls the Companies House REST API with retries and rate limiting; saves raw JSON |
 | Ingest (bulk) | `src/load_bulk.py` | Loads the monthly snapshot of all live UK companies (5.7m rows) from CSV to Parquet |
-| Clean | `src/clean_bulk.py` | Converts types, groups 14 inconsistent status labels into 5, extracts industry and postcode area, derives risk signals |
+| Clean (local) | `src/clean_bulk.py` | Converts types, groups 14 inconsistent status labels into 5, extracts industry and postcode area, derives risk signals |
 | Test | `tests/test_clean_quality.py` | Automated data-quality checks: row counts, uniqueness, missing values, valid dates |
+| Upload | `scripts/upload_to_lake.sh` | Uploads the raw and clean snapshots to Azure Data Lake Storage |
+| Bronze → silver → gold | `databricks/` | PySpark notebooks that build Delta tables and the risk score in Azure Databricks |
+
+## Cloud pipeline (Azure + Databricks)
+
+    Companies House  →  Codespace (Python ingest)  →  Azure Data Lake (raw / clean)
+                                                           ↓
+                                    Azure Databricks: bronze → silver → gold (Delta tables)
+
+- **Azure Data Lake Storage Gen2**: `raw` and `clean` containers, uploaded by `scripts/upload_to_lake.sh`
+  using a time-limited, least-privilege SAS token stored as a secret
+- **Azure Databricks (serverless)** reads the lake through Unity Catalog, using an Access Connector
+  (managed identity) with no keys or passwords in code
+- **Bronze** (`01_explore_lake`): raw snapshot plus lineage columns (`_source_file`, `_ingested_at`)
+- **Silver** (`02_silver_companies`): the cleaning logic rebuilt in PySpark; results match the DuckDB version exactly
+- **Gold** (`03_gold_risk`): `company_risk` (one row per company, with score, band and reasons) and `risk_by_industry`
 
 ## Findings so far (snapshot: 1 October 2026)
 
@@ -23,16 +39,46 @@ The idea comes from my experience in credit control: chasing late payers and rec
 - **Survivorship bias:** the snapshot only contains companies still alive, so older incorporation
   years look smaller because many of their companies have since closed. Trends over time need
   dissolved-company data too.
+- **Industry differences are small:** among industries with at least 1,000 active companies, the
+  share rated Medium or High ranges from about 7% to 11.5%, so the data does not show any one
+  sector as clearly riskier.
+
+## Risk score
+
+Each company gets a score from 0 to 100 with plain-language reasons, based on its status,
+overdue accounts, overdue confirmation statement, dormancy and age.
+Bands: Low (0–19), Medium (20–49), High (50+).
+
+| Signal | Points |
+|---|---|
+| In liquidation or administration | 80 |
+| Proposal to strike off | 50 |
+| Voluntary arrangement with creditors | 40 |
+| Accounts overdue | 25 |
+| Confirmation statement overdue | 15 |
+| Under 1 year old / 1–3 years old (only with another warning) | 15 / 8 |
+| Filed as dormant | 10 |
+
+**Version 1 → version 2:** in the first version, 1.74 million active companies were flagged
+just for being under 3 years old, so the score was largely measuring newness rather than risk.
+In version 2, age only adds points when another warning sign is present, which cut age flags
+by 87% to 221,346.
+
+**Limitations:** the weights are a reasoned starting point, not yet validated. The next step
+is to backtest them against which companies actually close in later monthly snapshots.
 
 ## Tech stack
 
-Python · SQL · DuckDB · pandas · Parquet · pytest · Git · GitHub Codespaces
+Python · SQL · DuckDB · pandas · Parquet · pytest · PySpark · Delta Lake ·
+Azure Data Lake Storage · Azure Databricks · Unity Catalog · Git · GitHub Codespaces
 
 ## Project structure
 
-    src/      pipeline scripts
-    tests/    data-quality tests
-    data/     local data (not committed to Git)
+    src/         pipeline scripts
+    scripts/     cloud upload script
+    databricks/  Databricks notebooks (bronze, silver, gold)
+    tests/       data-quality tests
+    data/        local data (not committed to Git)
 
 ## How to run
 
@@ -40,17 +86,21 @@ Python · SQL · DuckDB · pandas · Parquet · pytest · Git · GitHub Codespac
 2. `pip install -r requirements.txt`
 3. Download the monthly snapshot from Companies House into `data/raw/bulk/` and unzip it.
 4. Run `python src/load_bulk.py`, then `python src/clean_bulk.py`, then `pytest -v`.
+5. Store a SAS token for the storage account as `AZ_SAS_TOKEN`, then run
+   `scripts/upload_to_lake.sh 2026-10-01`.
+6. In Azure Databricks, run the notebooks in `databricks/` in order.
 
 ## Data protection
 
 This project uses company-level data only. Personal details of company officers and owners are
-not stored in the repository or shown in any outputs, and the API key is kept as a secret,
+not stored in the repository or shown in any outputs. API keys and tokens are kept as secrets,
 never in code.
 
 ## Roadmap
 
-- [ ] Move storage to Azure Data Lake and processing to Databricks
+- [x] Move storage to Azure Data Lake and processing to Databricks
 - [ ] Capture live company changes from the Companies House streaming API
 - [ ] Extract key figures from filed accounts
-- [ ] Build the payment-risk score and a dashboard
+- [ ] Backtest the risk score against next month's snapshot
+- [ ] Build a dashboard on the gold tables
 - [ ] Automate tests with GitHub Actions
