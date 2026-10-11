@@ -69,6 +69,20 @@ by 87% to 221,346.
 **Limitations:** the weights are a reasoned starting point, not yet validated. The next step
 is to backtest them against which companies actually close in later monthly snapshots.
 
+## Dashboard
+
+Built in Azure Databricks (AI/BI dashboards) on the gold tables. It includes a company
+search that returns each company's risk band, score and plain-language reasons.
+
+![Dashboard](dashboard.png)
+
+[Full-resolution PDF](Dashboard.pdf)
+
+**Reading the regional chart:** figures use registered office addresses. Areas that host
+company formation agents and registered-office services (for example CF, HR and central
+London) contain many dormant or short-lived companies, which can inflate their share of
+medium or high risk. Regional differences are modest overall (about 4.4% to 7.2%).
+
 ## Change data capture (live updates)
 
 `src/stream_companies.py` reads the Companies House streaming API and saves each company change
